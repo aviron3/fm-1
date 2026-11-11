@@ -2268,15 +2268,15 @@ int main(int argc, char **argv)
             if (!strcmp(UI_PALETTES[p].name, getenv("TAPE_ANIM"))) pi = p;
         setup(S_DLY);
         pal(pi);
-        song.playing = 1;
         for (f = 0; f < 120u; f++) {
             char nm[32];
-            song.g[G_DFDBK] = f >= 80u ? 110 : 74;   /* the last frames: the echo running away (wide eyes) */
-            pf.ew1 = f >= 50u && f < 80u ? 32768 : 0; /* .. and an ECHO THROW before it (faster reels) */
+            song.playing = f >= 15u && f < 95u;      /* stopped, PLAY (spin-up), STOP (wind-down) */
+            song.g[G_DFDBK] = f >= 75u ? 112 : 74;   /* the echo running away (wide eyes) */
+            pf.ew1 = f >= 50u && f < 75u ? 32768 : 0; /* .. and an ECHO THROW before it (faster reels) */
             {                                        /* a STAB chord on track 1 every 12 frames, decaying */
                 voice_t *v = &trk[0].v[0];
                 trk[0].engine = trk[0].eng_req = ENGI_STAB;
-                if (f % 12u == 3u) { v->active = 1; v->age = 1000u + f; v->env_out = 30000; }
+                if (song.playing && f % 12u == 3u) { v->active = 1; v->age = 1000u + f; v->env_out = 30000; }
                 else v->env_out = v->env_out * 3 / 4;
             }
             ui.frame += 2u;

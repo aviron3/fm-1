@@ -1,14 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * DUBWISE (a Felucca fork) */
 /* The DLY page's graph (GR_TAPE): the tape echo as a little cassette resting on a cantilevered concrete slab, in an
- * Ando-like room of smooth board-marked concrete (panel seams, form-tie holes, a slit of light). Berlin and Kingston
+ * Ando-like room of smooth board-marked concrete (panel seams, form-tie holes). Berlin and Kingston
  * only hinted at: the label's coordinates (52.5 N, 18.0 N), two tiny three-dot marks in its corners, a linden sprig
  * (Berlin's street tree) on the left and a fern frond (Jamaica's hills) on the right.
  * The reels' hubs have faces: they blink now and then, go wide-eyed when FDBK runs the echo away (111 and up: the
- * loop gain past 1); the tape winds from one reel to the other while the sequencer plays (each turning at the speed
- * its pack gives), reversing at its ends; ECHO THROW held spins them faster.
+ * loop gain past 1). The reels follow the transport like a deck's: PLAY spins them up, STOP lets them wind down
+ * (~half a second each way); running, the tape moves at a speed set by the tempo, each reel turning at the speed its
+ * pack gives, the tape winding from one to the other and reversing at its ends; ECHO THROW held spins them faster.
  * Smoke drifts up behind the tape: a little always while playing, a puff with every chord a STAB track starts (a new
- * voice), the room's haze and the slit's glow following how loud the stabs are.
+ * voice), the room's haze following how loud the stabs are.
  * Fixed colours, made gray on the GREY and MONO palettes (tape_c) so those stay neutral. */
 
 #define TP_CONC RGB(86, 84, 82)
@@ -16,8 +17,6 @@
 #define TP_SEAM RGB(70, 68, 66)
 #define TP_TIE RGB(46, 44, 43)
 #define TP_TIE_HI RGB(124, 121, 117)
-#define TP_SLIT RGB(255, 240, 212)
-#define TP_GLOW RGB(150, 140, 124)
 #define TP_SLAB RGB(124, 122, 118)
 #define TP_SLAB_TOP RGB(152, 149, 144)
 #define TP_SHADOW RGB(44, 42, 41)
@@ -112,13 +111,6 @@ static void tape_room(int32_t haze)
                 cv_rect(hx, hy + 2, 2, 1, tape_c(TP_TIE_HI));
             }
         }
-    /* the slit of light, its glow growing with the stabs */
-    for (x = -6; x <= 6; x++) {
-        int32_t a = (24 + haze / 4) * (7 - (x < 0 ? -x : x)) / 7;
-        for (y = 4; y < 58; y++)
-            tape_blend(214 + x, y, tape_c(TP_GLOW), a);
-    }
-    cv_rect(213, 4, 2, 54, tape_c(TP_SLIT));
     /* the haze: the whole wall a little lighter while the stabs ring */
     if (haze > 2)
         for (y = 2; y < 92; y += 2)
@@ -178,7 +170,7 @@ static void tape_fern(int32_t sway)
 #define TP_NPUFF 12u
 static struct {
     uint32_t frame, ang_l, ang_r, pos, rnd, age[NPART];
-    int32_t haze;
+    int32_t haze, spd;                                     /* spd: the transport, 0 stopped .. 256 at speed */
     uint8_t dir;
     struct { int16_t x, y; uint8_t r, life, life0; } p[TP_NPUFF];
 } tp;
@@ -334,8 +326,14 @@ static void graph_tape(void)
     tp.frame = ui.frame;
     if (df > 8u)
         df = 1;                                             /* (back on the page after a while: no jump) */
-    if (song.playing) {                                     /* the tape runs, auto-reverse at its ends */
-        uint32_t step = df * (pf.ew1 ? 3u : 1u);
+    /* the transport: towards 256 while playing, towards 0 stopped, a deck's spin-up and wind-down */
+    if (song.playing)
+        tp.spd = tp.spd + 24 * (int32_t)df > 256 ? 256 : tp.spd + 24 * (int32_t)df;
+    else
+        tp.spd = tp.spd - 16 * (int32_t)df < 0 ? 0 : tp.spd - 16 * (int32_t)df;
+    if (tp.spd) {                                           /* the tape runs at the tempo, auto-reverse at its ends */
+        uint32_t bpm = (uint32_t)clamp(song.g[G_BPM], 40, 240);
+        uint32_t step = (df * bpm * (uint32_t)tp.spd * (pf.ew1 ? 3u : 1u)) / (120u * 256u);
         if (tp.dir) {
             tp.pos = tp.pos > step ? tp.pos - step : 0u;
             if (!tp.pos)
@@ -350,11 +348,14 @@ static void graph_tape(void)
     }
     pl = 14 - (int32_t)(tp.pos * 5u / TP_LEN);              /* the packs: 14 .. 9 px, the tape between them */
     pr = 9 + (int32_t)(tp.pos * 5u / TP_LEN);
-    if (song.playing) {                                     /* one speed of tape: the small pack turns faster */
-        uint32_t base = df * (pf.ew1 ? 0x0C000000u : 0x04000000u) * 14u;
-        int32_t sgn = tp.dir ? -1 : 1;
-        tp.ang_l += (uint32_t)(sgn * (int32_t)(base / (uint32_t)pl));
-        tp.ang_r += (uint32_t)(sgn * (int32_t)(base / (uint32_t)pr));
+    if (tp.spd) {                                           /* one speed of tape: the small pack turns faster */
+        uint32_t bpm = (uint32_t)clamp(song.g[G_BPM], 40, 240);
+        uint64_t base = (uint64_t)df * (pf.ew1 ? 3u : 1u) * 0x38000000u * bpm * (uint32_t)tp.spd / (120u * 256u);
+        uint64_t sl = base / (uint32_t)pl, sr = base / (uint32_t)pr;
+        if (sl > 0x30000000u) sl = 0x30000000u;              /* (past a sixth of a turn a frame the teeth would alias) */
+        if (sr > 0x30000000u) sr = 0x30000000u;
+        tp.ang_l += tp.dir ? 0u - (uint32_t)sl : (uint32_t)sl;
+        tp.ang_r += tp.dir ? 0u - (uint32_t)sr : (uint32_t)sr;
     }
     lvl = tape_stabs(&hits);
     tp.haze += ((lvl * 100 >> 15) - tp.haze) / 4;          /* 0..100, following the stabs' loudness */
