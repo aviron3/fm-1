@@ -2273,6 +2273,12 @@ int main(int argc, char **argv)
             char nm[32];
             song.g[G_DFDBK] = f >= 80u ? 110 : 74;   /* the last frames: the echo running away (wide eyes) */
             pf.ew1 = f >= 50u && f < 80u ? 32768 : 0; /* .. and an ECHO THROW before it (faster reels) */
+            {                                        /* a STAB chord on track 1 every 12 frames, decaying */
+                voice_t *v = &trk[0].v[0];
+                trk[0].engine = trk[0].eng_req = ENGI_STAB;
+                if (f % 12u == 3u) { v->active = 1; v->age = 1000u + f; v->env_out = 30000; }
+                else v->env_out = v->env_out * 3 / 4;
+            }
             ui.frame += 2u;
             ui.force = 1;
             draw(S_DLY);
