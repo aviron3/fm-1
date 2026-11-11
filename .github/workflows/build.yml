@@ -1,0 +1,18 @@
+# DUBWISE: build the FM-1 package on every push (the .fwsc is the run's "packages" artifact) and release it on a tag.
+# Uses the community's shared, pinned build workflow (JieLi's toolchain is downloaded from JieLi's server there).
+name: build
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  workflow_dispatch:
+jobs:
+  build:
+    uses: zvenson/fm1-build/.github/workflows/build.yml@v1
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    with:
+      build: ./build.sh
+      packages: build/*.fwsc
